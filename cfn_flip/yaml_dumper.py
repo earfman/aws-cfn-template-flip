@@ -77,7 +77,20 @@ def fn_representer(dumper, fn_name, value):
     tag = "!{}".format(fn_name)
 
     if tag == "!GetAtt" and isinstance(value, list):
-        value = ".".join(value)
+        # The !GetAtt short form is only valid when every element is a plain
+        # string: the dotted scalar form (!GetAtt Resource.Attribute) can't
+        # express a nested function, and the loader's short-form constructor
+        # only reads scalar elements. When an element is itself an intrinsic
+        # (e.g. Fn::FindInMap nested in GetAtt, allowed by
+        # AWS::LanguageExtensions), fall back to the long form Fn::GetAtt
+        # mapping, which both round-trips and avoids crashing in ".".join().
+        # See issue #120.
+        if all(isinstance(item, six.string_types) for item in value):
+            value = ".".join(value)
+        else:
+            return dumper.represent_mapping(
+                TAG_MAP, ODict([("Fn::GetAtt", value)]), flow_style=False,
+            )
 
     if isinstance(value, list):
         return dumper.represent_sequence(tag, value)
